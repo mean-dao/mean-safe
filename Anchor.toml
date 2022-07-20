@@ -1,8 +1,8 @@
 anchor_version = "0.24.2"
 
 [provider]
-cluster = "devnet"
-wallet = "keys/upgrade-authority.json"
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
 
 [programs.mainnet]
 mean_multisig = "FF7U7Vj1PpBkTPau7frwLLrUHrjkxTQLsH7U5K3T3B3j"

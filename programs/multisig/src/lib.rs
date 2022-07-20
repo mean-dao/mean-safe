@@ -19,7 +19,6 @@
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::instruction::Instruction;
-use std::ops::Deref;
 
 declare_id!("FF7U7Vj1PpBkTPau7frwLLrUHrjkxTQLsH7U5K3T3B3j");
 
@@ -27,6 +26,17 @@ declare_id!("FF7U7Vj1PpBkTPau7frwLLrUHrjkxTQLsH7U5K3T3B3j");
 pub mod mean_multisig {
 
     use super::*;
+
+    // #[cfg(feature = "init-settings")]
+     pub fn init_settings(ctx: Context<InitSettings>) -> Result<()> {
+        ctx.accounts.settings.version = 1u8;
+        ctx.accounts.settings.bump = ctx.bumps["settings"];
+        ctx.accounts.settings.authority = ctx.accounts.authority.key();
+        ctx.accounts.settings.ops_account = "3TD6SWY9M1mLY2kZWJNavPLhwXvcRsWdnZLRaMzERJBw".parse().unwrap();
+        ctx.accounts.settings.create_multisig_fee = 20_000_000;
+        ctx.accounts.settings.create_transaction_fee = 20_000_000;
+        Ok(())
+    }
 
     /// Initializes a new multisig account with a set of owners and a threshold.
     pub fn create_multisig(
@@ -125,9 +135,7 @@ pub mod mean_multisig {
     /// which must be one of the owners of the multisig.
     pub fn create_transaction(
         ctx: Context<CreateTransaction>,
-        pid: Pubkey,
-        accs: Vec<TransactionAccount>,
-        data: Vec<u8>,
+        instructions: Vec<TransactionInstruction>,
         operation: u8,
         title: String,
         description: String,
@@ -152,9 +160,7 @@ pub mod mean_multisig {
         let tx = &mut ctx.accounts.transaction;
         let clock = Clock::get()?;
         // Save transaction data
-        tx.program_id = pid;
-        tx.accounts = accs;
-        tx.data = data;
+        tx.instructions = instructions;
         tx.signers = signers;
         tx.multisig = ctx.accounts.multisig.key();
         tx.executed_on = 0;
@@ -294,9 +300,18 @@ pub mod mean_multisig {
             return Err(ErrorCode::NotEnoughSigners.into());
         }
 
-        // Execute the transaction signed by the multisig.
-        let mut ix: Instruction = (*ctx.accounts.transaction).deref().into();
-        ix.accounts = ix
+        let seeds = &[
+            ctx.accounts.multisig.to_account_info().key.as_ref(),
+            &[ctx.accounts.multisig.nonce],
+        ];
+
+        let signer = &[&seeds[..]];
+        let accounts = ctx.remaining_accounts;
+
+        // Execute the transaction instructions signed by the multisig.
+        for ixt in &ctx.accounts.transaction.instructions {
+            let mut ix: Instruction = ixt.into();
+            ix.accounts = ix
             .accounts
             .iter()
             .map(|acc| {
@@ -307,15 +322,9 @@ pub mod mean_multisig {
                 acc
             })
             .collect();
+            solana_program::program::invoke_signed(&ix, accounts, signer)?;
+        }
 
-        let seeds = &[
-            ctx.accounts.multisig.to_account_info().key.as_ref(),
-            &[ctx.accounts.multisig.nonce],
-        ];
-
-        let signer = &[&seeds[..]];
-        let accounts = ctx.remaining_accounts;
-        solana_program::program::invoke_signed(&ix, accounts, signer)?;
         ctx.accounts.multisig.reload()?;
         // Burn the transaction to ensure one time use.
         ctx.accounts.transaction.executed_on = Clock::get()?.unix_timestamp as u64;
@@ -359,22 +368,6 @@ pub mod mean_multisig {
             return Err(ErrorCode::NotEnoughSigners.into());
         }
 
-        // Execute the transaction signed by the multisig.
-        let mut ix: Instruction = (*ctx.accounts.transaction).deref().into();
-        ix.accounts = ix
-            .accounts
-            .iter()
-            .map(|acc| {
-                let mut acc = acc.clone();
-                if &acc.pubkey == ctx.accounts.multisig_signer.to_account_info().key ||
-                   &acc.pubkey == ctx.accounts.pda_account.to_account_info().key 
-                {
-                    acc.is_signer = true;
-                }
-                acc
-            })
-            .collect();
-
         let transaction_seeds = &[
             ctx.accounts.multisig.to_account_info().key.as_ref(),            
             &[ctx.accounts.multisig.nonce],
@@ -388,7 +381,26 @@ pub mod mean_multisig {
 
         let signers = &[&transaction_seeds[..], &pda_seeds[..]];
         let accounts = ctx.remaining_accounts;
-        let _ = solana_program::program::invoke_signed(&ix, accounts, signers)?;
+
+        // Execute the transaction instructions signed by the multisig.
+         for ixt in &ctx.accounts.transaction.instructions {
+            let mut ix: Instruction = ixt.into();
+            ix.accounts = ix
+            .accounts
+            .iter()
+            .map(|acc| {
+                let mut acc = acc.clone();
+                if &acc.pubkey == ctx.accounts.multisig_signer.to_account_info().key ||
+                   &acc.pubkey == ctx.accounts.pda_account.to_account_info().key 
+                {
+                    acc.is_signer = true;
+                }
+                acc
+            })
+            .collect();
+            let _ = solana_program::program::invoke_signed(&ix, accounts, signers)?;
+         }
+
         let _ = ctx.accounts.multisig.reload()?;
         // Burn the transaction to ensure one time use.
         ctx.accounts.transaction.executed_on = Clock::get()?.unix_timestamp as u64;
@@ -630,6 +642,28 @@ pub struct ExecuteTransactionPda<'info> {
 }
 
 #[derive(Accounts)]
+// #[cfg(feature = "init-settings")]
+pub struct InitSettings<'info> {
+    #[account(mut)]
+    payer: Signer<'info>,
+    #[account()]
+    authority: Signer<'info>,
+    #[account(
+        init,
+        payer=payer,
+        seeds = [b"settings"],
+        bump,
+        space = 200
+    )]
+    settings: Account<'info, Settings>,
+    #[account(constraint = program.programdata_address()? == Some(program_data.key()))]
+    program: Program<'info, crate::program::MeanMultisig>,
+    #[account(constraint = program_data.upgrade_authority_address == Some(authority.key()))]
+    program_data: Account<'info, ProgramData>,
+    system_program: Program<'info, System>
+}
+
+#[derive(Accounts)]
 pub struct UpdateSettings<'info> {
     #[account()]
     authority: Signer<'info>,
@@ -680,12 +714,8 @@ pub struct MultisigV2 {
 pub struct Transaction {
     /// The multisig account this transaction belongs to.
     pub multisig: Pubkey,
-    /// Target program to execute against.
-    pub program_id: Pubkey,
-    /// Accounts requried for the transaction.
-    pub accounts: Vec<TransactionAccount>,
-    /// Instruction data for the transaction.
-    pub data: Vec<u8>,
+    /// Instructions of the transaction.
+    pub instructions: Vec<TransactionInstruction>,
     /// signers[index] is true if multisig.owners[index] signed the transaction.
     pub signers: Vec<u8>,
     /// Owner set sequence number.
@@ -705,6 +735,16 @@ pub struct Transaction {
     pub pda_timestamp: u64,
     /// The bump used to derive the PDA account
     pub pda_bump: u8
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct TransactionInstruction {
+    /// Target program to execute against.
+    pub program_id: Pubkey,
+    /// Accounts requried for the transaction.
+    pub accounts: Vec<TransactionAccount>,
+    /// Instruction data for the transaction.
+    pub data: Vec<u8>,
 }
 
 #[account]
@@ -758,12 +798,12 @@ impl Default for OwnerData {
     }
 }
 
-impl From<&Transaction> for Instruction {
-    fn from(tx: &Transaction) -> Instruction {
+impl From<&TransactionInstruction> for Instruction {
+    fn from(ix: &TransactionInstruction) -> Instruction {
         Instruction {
-            program_id: tx.program_id,
-            accounts: tx.accounts.iter().map(Into::into).collect(),
-            data: tx.data.clone(),
+            program_id: ix.program_id.clone(),
+            accounts: ix.accounts.iter().map(Into::into).collect(),
+            data: ix.data.clone(),
         }
     }
 }
