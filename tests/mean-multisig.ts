@@ -5,6 +5,7 @@
 // it is expected that the setting initialize test fails if it is not the first time 
 // (becasue the settings account will be already initialized)
 import * as anchor from "@project-serum/anchor";
+import { u64 } from '@solana/spl-token';
 import { AnchorProvider, BN, Program } from '@project-serum/anchor';
 import { Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction, BPF_LOADER_PROGRAM_ID } from '@solana/web3.js';
 import { MeanMultisig } from "../target/types/mean_multisig";
@@ -123,6 +124,13 @@ describe("mean-multisig", () => {
     );
     
     console.log("TX: ", transaction.publicKey.toBase58());
+    
+    const timeStamp = new u64(parseInt((Date.now() / 1000).toString()));
+    const [pdaAccount, pdaBump] = await PublicKey.findProgramAddress(
+          [multisig.publicKey.toBuffer(), timeStamp.toBuffer()],
+          program.programId
+    );
+      
     await program.methods
         .createTransaction(
           instructions,
@@ -130,8 +138,8 @@ describe("mean-multisig", () => {
           title,
           description,
           new BN(new Date().getTime()/1000).add(new BN(3600)),
-          new BN(0),
-          0
+          timeStamp,
+          pdaBump,
     )
         .preInstructions([createIx])
         .accounts({
@@ -217,15 +225,17 @@ describe("mean-multisig", () => {
         });
     });
 
-    const balanceBefore = await program.provider.connection.getBalance(userTest.publicKey, 'confirmed');
+      const balanceBefore = await program.provider.connection.getBalance(userTest.publicKey, 'confirmed');
+    
     await program.methods
-        .executeTransaction()
+        .executeTransaction(false)
         .accounts({
           multisig: multisig.publicKey,
           multisigSigner: multisigSigner,
           transaction: transaction.publicKey,
           transactionDetail: txDetailAddress,
           payer: user1.publicKey,
+          pdaAccount: pdaAccount,
           systemProgram: SystemProgram.programId,
         })
         .signers([user1, user2])
