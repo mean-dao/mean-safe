@@ -1,8 +1,6 @@
-anchor_version = "0.24.2"
-
-[provider]
-cluster = "localnet"
-wallet = "~/.config/solana/id.json"
+[features]
+seeds = false
+skip-lint = false
 
 [programs.mainnet]
 mean_multisig = "FF7U7Vj1PpBkTPau7frwLLrUHrjkxTQLsH7U5K3T3B3j"
@@ -13,8 +11,12 @@ mean_multisig = "FF7U7Vj1PpBkTPau7frwLLrUHrjkxTQLsH7U5K3T3B3j"
 [programs.localnet]
 mean_multisig = "FF7U7Vj1PpBkTPau7frwLLrUHrjkxTQLsH7U5K3T3B3j"
 
-[scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/multisig.ts"
-
 [registry]
-url = "https://anchor.projectserum.com"
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

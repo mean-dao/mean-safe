@@ -27,7 +27,6 @@ pub mod mean_multisig {
 
     use super::*;
 
-    // #[cfg(feature = "init-settings")]
      pub fn init_settings(ctx: Context<InitSettings>) -> Result<()> {
         ctx.accounts.settings.version = 1u8;
         ctx.accounts.settings.bump = ctx.bumps["settings"];
@@ -338,7 +337,7 @@ pub mod mean_multisig {
         Ok(())
     }
 
-    /// Executes the given transaction if threshold owners have signed it.
+    // Executes the given transaction if threshold owners have signed it.
     pub fn execute_transaction_pda(ctx: Context<ExecuteTransactionPda>) -> Result<()> {
 
         // Has this been executed already?
@@ -642,7 +641,6 @@ pub struct ExecuteTransactionPda<'info> {
 }
 
 #[derive(Accounts)]
-// #[cfg(feature = "init-settings")]
 pub struct InitSettings<'info> {
     #[account(mut)]
     payer: Signer<'info>,

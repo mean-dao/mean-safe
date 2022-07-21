@@ -1,16 +1,25 @@
+// solana-test-validator -r
+// anchor deploy
+// anchor test --skip-local-validator --skip-deploy --detach
+//  because we are not deploying the program in a new local cluster every time we run this tests,
+// it is expected that the setting initialize test fails if it is not the first time 
+// (becasue the settings account will be already initialized)
 import * as anchor from "@project-serum/anchor";
 import { AnchorProvider, BN, Program } from '@project-serum/anchor';
-import { Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
+import { Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction, BPF_LOADER_PROGRAM_ID } from '@solana/web3.js';
 import { MeanMultisig } from "../target/types/mean_multisig";
 
-const MEAN_MULTISIG_OPS = new PublicKey("3TD6SWY9M1mLY2kZWJNavPLhwXvcRsWdnZLRaMzERJBw");
+describe("mean-multisig", () => {
+  // Configure the client to use the local cluster.
+  const provider = anchor.AnchorProvider.env();
+  anchor.setProvider(provider);
+  const MEAN_MULTISIG_OPS = new PublicKey("3TD6SWY9M1mLY2kZWJNavPLhwXvcRsWdnZLRaMzERJBw");
 
-describe("multisig", async () => {
-    const provider = anchor.getProvider() as AnchorProvider;
-    anchor.setProvider(provider);
-    const program = anchor.workspace.MeanMultisig as Program<MeanMultisig>;
-    const [settings] = await PublicKey.findProgramAddress([Buffer.from(anchor.utils.bytes.utf8.encode("settings"))], program.programId);
-    const [programData] = await PublicKey.findProgramAddress([program.programId.toBytes()], new anchor.web3.PublicKey("BPFLoaderUpgradeab1e11111111111111111111111")); 
+  const program = anchor.workspace.MeanMultisig as Program<MeanMultisig>;
+
+  it("Creating and executing multi instruction transaction!", async () => {
+   const [settings] = await PublicKey.findProgramAddress([Buffer.from(anchor.utils.bytes.utf8.encode("settings"))], program.programId);
+    const [programData] = await PublicKey.findProgramAddress([program.programId.toBytes()], new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111")); 
     await program.methods.initSettings().accounts({
         payer: (program.provider as AnchorProvider).wallet.publicKey,
         authority: (program.provider as AnchorProvider).wallet.publicKey,
@@ -120,9 +129,9 @@ describe("multisig", async () => {
           operation,
           title,
           description,
-          new BN((new Date().getTime()/1000) + 3600),
+          new BN(new Date().getTime()/1000).add(new BN(3600)),
           new BN(0),
-          new BN(0)
+          0
     )
         .preInstructions([createIx])
         .accounts({
@@ -232,6 +241,7 @@ describe("multisig", async () => {
     } else {
         console.log("All instructions in transaction isn't executed properly.\n");
     }
+  });
 });
 
 const createUser = async (provider: AnchorProvider, ) => {
