@@ -116,13 +116,7 @@ describe("mean-multisig", () => {
                 accounts: ix2.keys.map(key => ({pubkey: key.pubkey, isSigner: key.isSigner, isWritable: key.isWritable})),
                 data: ix2.data
             }
-        ];
-    
-    const [txDetailAddress] = await PublicKey.findProgramAddress(
-        [multisig.publicKey.toBuffer(), transaction.publicKey.toBuffer()],
-        program.programId
-    );
-    
+        ];    
     console.log("TX: ", transaction.publicKey.toBase58());
     
     const timeStamp = new u64(parseInt((Date.now() / 1000).toString()));
@@ -145,7 +139,6 @@ describe("mean-multisig", () => {
         .accounts({
           multisig: multisig.publicKey,
           transaction: transaction.publicKey,
-          transactionDetail: txDetailAddress,
           proposer: user1.publicKey,
           settings,
           opsAccount: MEAN_MULTISIG_OPS,
@@ -180,7 +173,6 @@ describe("mean-multisig", () => {
         .accounts({
           multisig: multisig.publicKey,
           transaction: transaction.publicKey,
-          transactionDetail: txDetailAddress,
           owner: user1.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -195,7 +187,6 @@ describe("mean-multisig", () => {
         .accounts({
           multisig: multisig.publicKey,
           transaction: transaction.publicKey,
-          transactionDetail: txDetailAddress,
           owner: user3.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -233,7 +224,6 @@ describe("mean-multisig", () => {
           multisig: multisig.publicKey,
           multisigSigner: multisigSigner,
           transaction: transaction.publicKey,
-          transactionDetail: txDetailAddress,
           payer: user1.publicKey,
           pdaAccount: pdaAccount,
           systemProgram: SystemProgram.programId,

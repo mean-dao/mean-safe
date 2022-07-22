@@ -168,17 +168,12 @@ pub mod mean_multisig {
         tx.operation = operation;
         // tx.keypairs = keypairs; // deprecated
         tx.proposer = ctx.accounts.proposer.key();
+        tx.title = string_to_array_64(&title);
+        tx.description = string_to_array_512(&description);
+        tx.expiration_date = expiration_date;
         // These to fields are optional since all Txs doesn't need to create a PDA account
         tx.pda_timestamp = pda_timestamp;
         tx.pda_bump = pda_bump;
-
-        let tx_detail = &mut ctx.accounts.transaction_detail;
-        // Save transaction detail
-        // tx_detail.multisig = ctx.accounts.multisig.key();
-        // tx_detail.transaction = ctx.accounts.transaction.key();
-        tx_detail.title = string_to_array_64(&title);
-        tx_detail.description = string_to_array_512(&description);
-        tx_detail.expiration_date = expiration_date;
 
         // Update multisig pending transactions 
         let multisig = &mut ctx.accounts.multisig; 
@@ -233,8 +228,8 @@ pub mod mean_multisig {
         // Transaction has expired already?
         let now = Clock::get()?.unix_timestamp as u64;
 
-        if ctx.accounts.transaction_detail.expiration_date > 0 && 
-           ctx.accounts.transaction_detail.expiration_date < now 
+        if ctx.accounts.transaction.expiration_date > 0 && 
+           ctx.accounts.transaction.expiration_date < now 
         {
             return Err(ErrorCode::AlreadyExpired.into());
         }
@@ -258,8 +253,8 @@ pub mod mean_multisig {
         // Transaction has expired already?
         let now = Clock::get()?.unix_timestamp as u64;
 
-        if ctx.accounts.transaction_detail.expiration_date > 0 && 
-           ctx.accounts.transaction_detail.expiration_date < now 
+        if ctx.accounts.transaction.expiration_date > 0 && 
+           ctx.accounts.transaction.expiration_date < now 
         {
             return Err(ErrorCode::AlreadyExpired.into());
         }
@@ -279,8 +274,8 @@ pub mod mean_multisig {
         // Transaction has expired already?
         let now = Clock::get()?.unix_timestamp as u64;
 
-        if ctx.accounts.transaction_detail.expiration_date > 0
-            && ctx.accounts.transaction_detail.expiration_date < now
+        if ctx.accounts.transaction.expiration_date > 0
+            && ctx.accounts.transaction.expiration_date < now
         {
             return Err(ErrorCode::AlreadyExpired.into());
         }
@@ -484,14 +479,6 @@ pub struct CreateTransaction<'info> {
     multisig: Box<Account<'info, MultisigV2>>,
     #[account(zero, signer)]
     transaction: Box<Account<'info, Transaction>>,
-    #[account(
-        init,
-        payer = proposer,
-        seeds = [multisig.key().as_ref(), transaction.key().as_ref()],
-        bump,
-        space = 8 + 584 // discriminator + account size
-    )]
-    transaction_detail: Box<Account<'info, TransactionDetail>>,
     // One of the owners. Checked in the handler.
     #[account(mut)]
     proposer: Signer<'info>,
@@ -522,13 +509,6 @@ pub struct CancelTransaction<'info> {
     transaction: Box<Account<'info, Transaction>>,
     #[account(
         mut,
-        close = proposer,
-        seeds = [multisig.key().as_ref(), transaction.key().as_ref()],
-        bump
-    )]
-    transaction_detail: Box<Account<'info, TransactionDetail>>,
-    #[account(
-        mut,
         constraint = proposer.key() == transaction.proposer @ ErrorCode::InvalidOwner
     )]
     proposer: Signer<'info>,
@@ -548,14 +528,6 @@ pub struct Approve<'info> {
         constraint = transaction.executed_on == 0 @ ErrorCode::AlreadyExecuted
     )]
     transaction: Box<Account<'info, Transaction>>,
-    #[account(
-        init_if_needed,
-        payer = owner,
-        seeds = [multisig.key().as_ref(), transaction.key().as_ref()],
-        bump,
-        space = 8 + 584 // discriminator + account size
-    )]
-    transaction_detail: Box<Account<'info, TransactionDetail>>,
     // One of the multisig owners. Checked in the handler.
     #[account(mut)]
     owner: Signer<'info>,
@@ -575,14 +547,6 @@ pub struct Reject<'info> {
         constraint = transaction.executed_on == 0 @ ErrorCode::AlreadyExecuted
     )]
     transaction: Box<Account<'info, Transaction>>,
-    #[account(
-        init_if_needed,
-        payer = owner,
-        seeds = [multisig.key().as_ref(), transaction.key().as_ref()],
-        bump,
-        space = 8 + 584 // discriminator + account size
-    )]
-    transaction_detail: Box<Account<'info, TransactionDetail>>,
     // One of the multisig owners. Checked in the handler.
     #[account(mut)]
     owner: Signer<'info>,
@@ -611,14 +575,6 @@ pub struct ExecuteTransaction<'info> {
     pda_account: UncheckedAccount<'info>,
     #[account(mut, has_one = multisig)]
     transaction: Box<Account<'info, Transaction>>,
-    #[account(
-        init_if_needed,
-        payer = payer,
-        seeds = [multisig.key().as_ref(), transaction.key().as_ref()],
-        bump,
-        space = 8 + 584 // discriminator + account size
-    )]
-    transaction_detail: Box<Account<'info, TransactionDetail>>,
     // One of the multisig owners. Checked in the handler.
     #[account(mut)]
     payer: Signer<'info>,
@@ -751,6 +707,12 @@ pub struct Transaction {
     pub keypairs: Vec<[u8; 64]>,
     /// The proposer of the transaction
     pub proposer: Pubkey,
+    /// A short title to identify the transaction
+    pub title: [u8; 64],
+    /// A long description with more details about the transaction
+    pub description: [u8; 512],
+    /// Expiration date (timestamp)
+    pub expiration_date: u64,
     /// The timestamp used as part of the seed of the PDA account
     pub pda_timestamp: u64,
     /// The bump used to derive the PDA account
@@ -765,16 +727,6 @@ pub struct TransactionInstruction {
     pub accounts: Vec<TransactionAccount>,
     /// Instruction data for the transaction.
     pub data: Vec<u8>,
-}
-
-#[account]
-pub struct TransactionDetail {
-    /// A short title to identify the transaction
-    pub title: [u8; 64],
-    /// A long description with more details about the transaction
-    pub description: [u8; 512],
-    /// Expiration date (timestamp)
-    pub expiration_date: u64
 }
 
 #[account]
