@@ -317,7 +317,6 @@ pub mod mean_multisig {
                 .map(|acc| {
                     let mut acc = acc.clone();
                     if &acc.pubkey == ctx.accounts.multisig_signer.to_account_info().key
-                        || (is_pda && &acc.pubkey == ctx.accounts.pda_account.to_account_info().key)
                     {
                         acc.is_signer = true;
                     }
@@ -347,81 +346,81 @@ pub mod mean_multisig {
         Ok(())
     }
 
-    // // Executes the given transaction if threshold owners have signed it.
-    // pub fn execute_transaction_pda(ctx: Context<ExecuteTransactionPda>) -> Result<()> {
+    /// Executes the given transaction if threshold owners have signed it.
+    pub fn execute_transaction_pda(ctx: Context<ExecuteTransactionPda>) -> Result<()> {
 
-    //     // Has this been executed already?
-    //     if ctx.accounts.transaction.executed_on > 0 {
-    //         return Err(ErrorCode::AlreadyExecuted.into());
-    //     }
+        // Has this been executed already?
+        if ctx.accounts.transaction.executed_on > 0 {
+            return Err(ErrorCode::AlreadyExecuted.into());
+        }
 
-    //     // Transaction has expired already?
-    //     let now = Clock::get()?.unix_timestamp as u64;
+        // Transaction has expired already?
+        let now = Clock::get()?.unix_timestamp as u64;
 
-    //     if ctx.accounts.transaction_detail.expiration_date > 0 && 
-    //        ctx.accounts.transaction_detail.expiration_date < now 
-    //     {
-    //         return Err(ErrorCode::AlreadyExpired.into());
-    //     }
+        if ctx.accounts.transaction.expiration_date > 0 && 
+           ctx.accounts.transaction.expiration_date < now 
+        {
+            return Err(ErrorCode::AlreadyExpired.into());
+        }
 
-    //     // Do we have enough signers.
-    //     let sig_count = ctx
-    //         .accounts
-    //         .transaction
-    //         .signers
-    //         .iter()
-    //         .filter(|&did_sign| *did_sign == 1)
-    //         .count() as u64;
+        // Do we have enough signers.
+        let sig_count = ctx
+            .accounts
+            .transaction
+            .signers
+            .iter()
+            .filter(|&did_sign| *did_sign == 1)
+            .count() as u64;
 
-    //     if sig_count < ctx.accounts.multisig.threshold {
-    //         return Err(ErrorCode::NotEnoughSigners.into());
-    //     }
+        if sig_count < ctx.accounts.multisig.threshold {
+            return Err(ErrorCode::NotEnoughSigners.into());
+        }
 
-    //     let transaction_seeds = &[
-    //         ctx.accounts.multisig.to_account_info().key.as_ref(),            
-    //         &[ctx.accounts.multisig.nonce],
-    //     ];
+        let transaction_seeds = &[
+            ctx.accounts.multisig.to_account_info().key.as_ref(),            
+            &[ctx.accounts.multisig.nonce],
+        ];
 
-    //     let pda_seeds = &[
-    //         ctx.accounts.multisig.to_account_info().key.as_ref(),
-    //         &ctx.accounts.transaction.pda_timestamp.to_le_bytes(),
-    //         &[ctx.accounts.transaction.pda_bump],
-    //     ];
+        let pda_seeds = &[
+            ctx.accounts.multisig.to_account_info().key.as_ref(),
+            &ctx.accounts.transaction.pda_timestamp.to_le_bytes(),
+            &[ctx.accounts.transaction.pda_bump],
+        ];
 
-    //     let signers = &[&transaction_seeds[..], &pda_seeds[..]];
-    //     let accounts = ctx.remaining_accounts;
+        let signers = &[&transaction_seeds[..], &pda_seeds[..]];
+        let accounts = ctx.remaining_accounts;
 
-    //     // Execute the transaction instructions signed by the multisig.
-    //      for ixt in &ctx.accounts.transaction.instructions {
-    //         let mut ix: Instruction = ixt.into();
-    //         ix.accounts = ix
-    //         .accounts
-    //         .iter()
-    //         .map(|acc| {
-    //             let mut acc = acc.clone();
-    //             if &acc.pubkey == ctx.accounts.multisig_signer.to_account_info().key ||
-    //                &acc.pubkey == ctx.accounts.pda_account.to_account_info().key 
-    //             {
-    //                 acc.is_signer = true;
-    //             }
-    //             acc
-    //         })
-    //         .collect();
-    //         let _ = solana_program::program::invoke_signed(&ix, accounts, signers)?;
-    //      }
+        // Execute the transaction instructions signed by the multisig.
+         for ixt in &ctx.accounts.transaction.instructions {
+            let mut ix: Instruction = ixt.into();
+            ix.accounts = ix
+            .accounts
+            .iter()
+            .map(|acc| {
+                let mut acc = acc.clone();
+                if &acc.pubkey == ctx.accounts.multisig_signer.to_account_info().key ||
+                   &acc.pubkey == ctx.accounts.pda_account.to_account_info().key 
+                {
+                    acc.is_signer = true;
+                }
+                acc
+            })
+            .collect();
+            let _ = solana_program::program::invoke_signed(&ix, accounts, signers)?;
+         }
 
-    //     let _ = ctx.accounts.multisig.reload()?;
-    //     // Burn the transaction to ensure one time use.
-    //     ctx.accounts.transaction.executed_on = Clock::get()?.unix_timestamp as u64;
+        let _ = ctx.accounts.multisig.reload()?;
+        // Burn the transaction to ensure one time use.
+        ctx.accounts.transaction.executed_on = Clock::get()?.unix_timestamp as u64;
 
-    //     if ctx.accounts.multisig.pending_txs > 0 {
-    //         ctx.accounts.multisig.pending_txs = ctx.accounts.multisig.pending_txs
-    //             .checked_sub(1)
-    //             .ok_or(ErrorCode::Overflow)?;
-    //     }
+        if ctx.accounts.multisig.pending_txs > 0 {
+            ctx.accounts.multisig.pending_txs = ctx.accounts.multisig.pending_txs
+                .checked_sub(1)
+                .ok_or(ErrorCode::Overflow)?;
+        }
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     pub fn update_settings(
         ctx: Context<UpdateSettings>, 
@@ -566,6 +565,28 @@ pub struct ExecuteTransaction<'info> {
         bump = multisig.nonce,
     )]
     multisig_signer: UncheckedAccount<'info>,
+    #[account(mut, has_one = multisig)]
+    transaction: Box<Account<'info, Transaction>>,
+    // One of the multisig owners. Checked in the handler.
+    #[account(mut)]
+    payer: Signer<'info>,
+    system_program: Program<'info, System>
+}
+
+#[derive(Accounts)]
+pub struct ExecuteTransactionPda<'info> {
+    /// CHECK: multisig_signer is a PDA program signer. Data is never read or written to
+    #[account(
+        mut,
+        constraint = multisig.owner_set_seqno == transaction.owner_set_seqno @ ErrorCode::InvalidOwnerSetSeqNumber
+    )]
+    multisig: Box<Account<'info, MultisigV2>>,
+    /// CHECK: `doc comment explaining why no checks through types are necessary`
+    #[account(
+        seeds = [multisig.key().as_ref()],
+        bump = multisig.nonce,
+    )]
+    multisig_signer: UncheckedAccount<'info>,
     /// CHECK: `doc comment explaining why no checks through types are necessary`
     #[account(
         mut,
@@ -575,48 +596,10 @@ pub struct ExecuteTransaction<'info> {
     pda_account: UncheckedAccount<'info>,
     #[account(mut, has_one = multisig)]
     transaction: Box<Account<'info, Transaction>>,
-    // One of the multisig owners. Checked in the handler.
     #[account(mut)]
     payer: Signer<'info>,
     system_program: Program<'info, System>
 }
-
-// #[derive(Accounts)]
-// pub struct ExecuteTransactionPda<'info> {
-//     /// CHECK: multisig_signer is a PDA program signer. Data is never read or written to
-//     #[account(
-//         mut,
-//         constraint = multisig.owner_set_seqno == transaction.owner_set_seqno @ ErrorCode::InvalidOwnerSetSeqNumber
-//     )]
-//     multisig: Box<Account<'info, MultisigV2>>,
-//     /// CHECK: `doc comment explaining why no checks through types are necessary`
-//     #[account(
-//         seeds = [multisig.key().as_ref()],
-//         bump = multisig.nonce,
-//     )]
-//     multisig_signer: UncheckedAccount<'info>,
-//     /// CHECK: `doc comment explaining why no checks through types are necessary`
-//     #[account(
-//         mut,
-//         seeds = [multisig.key().as_ref(), &transaction.pda_timestamp.to_le_bytes()],
-//         bump = transaction.pda_bump,
-//     )]
-//     pda_account: UncheckedAccount<'info>,
-//     #[account(mut, has_one = multisig)]
-//     transaction: Box<Account<'info, Transaction>>,
-//     #[account(
-//         init_if_needed,
-//         payer = payer,
-//         seeds = [multisig.key().as_ref(), transaction.key().as_ref()],
-//         bump,
-//         space = 8 + 584 // discriminator + account size
-//     )]
-//     transaction_detail: Box<Account<'info, TransactionDetail>>,
-//     // One of the multisig owners. Checked in the handler.
-//     #[account(mut)]
-//     payer: Signer<'info>,
-//     system_program: Program<'info, System>
-// }
 
 // #[derive(Accounts)]
 // pub struct InitSettings<'info> {
