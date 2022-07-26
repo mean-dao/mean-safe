@@ -117,7 +117,12 @@ describe("mean-multisig", () => {
             }
         ];    
     console.log("TX: ", transaction.publicKey.toBase58());
-         
+    
+    const [transactionDetail] = await PublicKey.findProgramAddress(
+        [multisig.publicKey.toBuffer(), transaction.publicKey.toBuffer()],
+        program.programId
+    );
+
     await program.methods
         .createTransaction(
           instructions,
@@ -125,8 +130,6 @@ describe("mean-multisig", () => {
           title,
           description,
           new BN(new Date().getTime()/1000).add(new BN(3600)),
-          new BN(0),
-          0,
     )
         .preInstructions([createIx])
         .accounts({
@@ -134,6 +137,7 @@ describe("mean-multisig", () => {
           transaction: transaction.publicKey,
           proposer: user1.publicKey,
           settings,
+          transactionDetail,
           opsAccount: MEAN_MULTISIG_OPS,
           systemProgram: SystemProgram.programId,
         })
@@ -166,6 +170,7 @@ describe("mean-multisig", () => {
         .accounts({
           multisig: multisig.publicKey,
           transaction: transaction.publicKey,
+          transactionDetail,
           owner: user1.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -180,6 +185,7 @@ describe("mean-multisig", () => {
         .accounts({
           multisig: multisig.publicKey,
           transaction: transaction.publicKey,
+          transactionDetail,
           owner: user3.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -212,11 +218,12 @@ describe("mean-multisig", () => {
       const balanceBefore = await program.provider.connection.getBalance(userTest.publicKey, 'confirmed');
     
     await program.methods
-        .executeTransaction(false)
+        .executeTransaction([])
         .accounts({
           multisig: multisig.publicKey,
           multisigSigner: multisigSigner,
           transaction: transaction.publicKey,
+          transactionDetail,
           payer: user1.publicKey,
           systemProgram: SystemProgram.programId,
         })
