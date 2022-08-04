@@ -20,6 +20,10 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::instruction::Instruction;
 
+pub mod new_account_replacer {
+    anchor_lang::declare_id!("NEWxKrWoVvDg92eEGEoYvZSLdhgvGY6w2okie1nMzKp");
+}
+
 declare_id!("FF7U7Vj1PpBkTPau7frwLLrUHrjkxTQLsH7U5K3T3B3j");
 
 #[program]
@@ -302,7 +306,6 @@ pub mod mean_multisig {
         let signers: Vec<&[&[u8]]> = vec![&transaction_seeds[..]];
 
         let accounts = ctx.remaining_accounts;
-        let (account_replacer_pubkey, _) = Pubkey::find_program_address(&["multisig_account_replacer".as_bytes()], &mean_multisig::ID);
         let mut last_additional_account_used_index = 0;
         for ixt in &mut ctx.accounts.transaction.instructions.iter(){
             let mut ixt = ixt.clone();
@@ -312,7 +315,7 @@ pub mod mean_multisig {
                 let mut acc = acc.clone();
                 if &acc.pubkey == ctx.accounts.multisig_signer.to_account_info().key {
                         acc.is_signer = true;
-                } else if acc.pubkey == account_replacer_pubkey {
+                } else if acc.pubkey == new_account_replacer::ID {
                     let passed_account = additional_accounts.get(last_additional_account_used_index).ok_or(ErrorCode::RequiredAdditionalAccountsNotSent)?;
                     acc.pubkey = passed_account.pubkey;
                     acc.is_signer = true;
