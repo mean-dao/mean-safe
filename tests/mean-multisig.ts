@@ -218,7 +218,7 @@ describe("mean-multisig", () => {
       const balanceBefore = await program.provider.connection.getBalance(userTest.publicKey, 'confirmed');
     
     await program.methods
-        .executeTransaction([])
+        .executeTransaction()
         .accounts({
           multisig: multisig.publicKey,
           multisigSigner: multisigSigner,

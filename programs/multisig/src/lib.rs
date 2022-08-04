@@ -20,17 +20,10 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::instruction::Instruction;
 
-pub mod new_account_replacer {
-    anchor_lang::declare_id!("NEWxKrWoVvDg92eEGEoYvZSLdhgvGY6w2okie1nMzKp");
-}
-
 declare_id!("FF7U7Vj1PpBkTPau7frwLLrUHrjkxTQLsH7U5K3T3B3j");
 
 #[program]
 pub mod mean_multisig {
-
-    use std::vec;
-
     use super::*;
 
     //  pub fn init_settings(ctx: Context<InitSettings>) -> Result<()> {
@@ -270,77 +263,66 @@ pub mod mean_multisig {
     }
 
     /// Executes the given transaction if threshold owners have signed it.
-    pub fn execute_transaction(ctx: Context<ExecuteTransaction>, additional_accounts: Vec<TransactionAccount>) -> Result<()> {
-        let multisig = &ctx.accounts.multisig;
-        let transaction = &ctx.accounts.transaction;
-        let transaction_details = &ctx.accounts.transaction_detail;
+    pub fn execute_transaction(ctx: Context<ExecuteTransaction>) -> Result<()> {
+
         // Has this been executed already?
-        if transaction.executed_on > 0 {
+        if ctx.accounts.transaction.executed_on > 0 {
             return Err(ErrorCode::AlreadyExecuted.into());
         }
 
         // Transaction has expired already?
         let now = Clock::get()?.unix_timestamp as u64;
 
-        if transaction_details.expiration_date > 0
-            && transaction_details.expiration_date < now
+        if ctx.accounts.transaction_detail.expiration_date > 0 && 
+           ctx.accounts.transaction_detail.expiration_date < now 
         {
             return Err(ErrorCode::AlreadyExpired.into());
         }
 
         // Do we have enough signers.
-        let sig_count = transaction
+        let sig_count = ctx
+            .accounts
+            .transaction
             .signers
             .iter()
             .filter(|&did_sign| *did_sign == 1)
             .count() as u64;
 
-        if sig_count < multisig.threshold {
+        if sig_count < ctx.accounts.multisig.threshold {
             return Err(ErrorCode::NotEnoughSigners.into());
         }
 
-        let transaction_seeds = &[
-            multisig.to_account_info().key.as_ref(),
-            &[multisig.nonce],
+        let seeds = &[
+            ctx.accounts.multisig.to_account_info().key.as_ref(),
+            &[ctx.accounts.multisig.nonce],
         ];
-        let signers: Vec<&[&[u8]]> = vec![&transaction_seeds[..]];
 
+        let signer = &[&seeds[..]];
         let accounts = ctx.remaining_accounts;
-        let mut last_additional_account_used_index = 0;
-        for ixt in &mut ctx.accounts.transaction.instructions.iter(){
-            let mut ixt = ixt.clone();
-            
-            let mut accounts_list = vec!();
-            for acc in &mut ixt.accounts.iter() {
+
+        // Execute the transaction instructions signed by the multisig.
+        for ixt in &ctx.accounts.transaction.instructions {
+            let mut ix: Instruction = ixt.into();
+            ix.accounts = ix
+            .accounts
+            .iter()
+            .map(|acc| {
                 let mut acc = acc.clone();
                 if &acc.pubkey == ctx.accounts.multisig_signer.to_account_info().key {
-                        acc.is_signer = true;
-                } else if acc.pubkey == new_account_replacer::ID {
-                    let passed_account = additional_accounts.get(last_additional_account_used_index).ok_or(ErrorCode::RequiredAdditionalAccountsNotSent)?;
-                    acc.pubkey = passed_account.pubkey;
                     acc.is_signer = true;
-                    last_additional_account_used_index = last_additional_account_used_index + 1;
                 }
-                accounts_list.push(acc);
-            }
-            ixt.accounts = accounts_list;
-            let ix: Instruction = ixt.into();
-
-            solana_program::program::invoke_signed(
-                &ix,
-                accounts,
-                &signers,
-            )?;
+                acc
+            })
+            .collect();
+            solana_program::program::invoke_signed(&ix, accounts, signer)?;
         }
+
         ctx.accounts.multisig.reload()?;
         // Burn the transaction to ensure one time use.
         ctx.accounts.transaction.executed_on = Clock::get()?.unix_timestamp as u64;
 
         if ctx.accounts.multisig.pending_txs > 0 {
-            ctx.accounts.multisig.pending_txs = ctx
-                .accounts
-                .multisig
-                .pending_txs
+            ctx.accounts.multisig.pending_txs = ctx.accounts.multisig.pending_txs
                 .checked_sub(1)
                 .ok_or(ErrorCode::Overflow)?;
         }
@@ -690,8 +672,8 @@ impl Default for OwnerData {
     }
 }
 
-impl From<TransactionInstruction> for Instruction {
-    fn from(ix: TransactionInstruction) -> Instruction {
+impl From<&TransactionInstruction> for Instruction {
+    fn from(ix: &TransactionInstruction) -> Instruction {
         Instruction {
             program_id: ix.program_id.clone(),
             accounts: ix.accounts.iter().map(Into::into).collect(),
