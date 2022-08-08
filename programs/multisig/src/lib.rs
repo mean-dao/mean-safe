@@ -42,7 +42,8 @@ pub mod mean_multisig {
         owners: Vec<Owner>,
         threshold: u64,
         nonce: u8,
-        label: String
+        label: String,
+        cool_off_period_in_seconds: u64,
 
     ) -> Result<()> {
 
@@ -74,6 +75,7 @@ pub mod mean_multisig {
         multisig.label = string_to_array_32(&label);
         multisig.created_on = clock.unix_timestamp as u64;
         multisig.pending_txs = 0;
+        multisig.cool_off_period_in_seconds = cool_off_period_in_seconds;
 
         // Fee
         let pay_fee_ix = solana_program::system_instruction::transfer(
@@ -148,22 +150,29 @@ pub mod mean_multisig {
             .position(|a| a.address.eq(&ctx.accounts.proposer.key()))
             .ok_or(ErrorCode::InvalidOwner)?;
 
+        let now = Clock::get()?.unix_timestamp as u64;
+
+        if expiration_date <= now.checked_add(ctx.accounts.multisig.cool_off_period_in_seconds).ok_or(ErrorCode::Overflow)? {
+            return Err(ErrorCode::ExpiryDateTooShort.into());
+        }
+        
         let mut signers = Vec::<u8>::new();
         signers.resize(ctx.accounts.multisig.owners.len(), 0u8);
         signers[owner_index] = 1u8;
 
         let tx = &mut ctx.accounts.transaction;
-        let clock = Clock::get()?;
+        
         // Save transaction data
         tx.instructions = instructions;
         tx.signers = signers;
         tx.multisig = ctx.accounts.multisig.key();
         tx.executed_on = 0;
         tx.owner_set_seqno = ctx.accounts.multisig.owner_set_seqno;
-        tx.created_on = clock.unix_timestamp as u64;
+        tx.created_on = now;
         tx.operation = operation;
         // tx.keypairs = keypairs; // deprecated
         tx.proposer = ctx.accounts.proposer.key();
+        tx.last_known_proposal_status = ProposalStatus::Active as u8;
 
         let tx_detail = &mut ctx.accounts.transaction_detail;
         // Save transaction detail
@@ -234,6 +243,22 @@ pub mod mean_multisig {
 
         ctx.accounts.transaction.signers[owner_index] = 1u8;
 
+        let sig_count = ctx
+            .accounts
+            .transaction
+            .signers
+            .iter()
+            .filter(|&did_sign| *did_sign == 1)
+            .count() as u64;
+
+        if sig_count >= ctx.accounts.multisig.threshold {
+            ctx.accounts.transaction.last_known_proposal_status = ProposalStatus::Passed as u8;
+            
+            if sig_count == ctx.accounts.multisig.threshold {
+                ctx.accounts.transaction.last_passed_timestamp = now;
+            }
+        }
+
         Ok(())
     }
 
@@ -258,6 +283,35 @@ pub mod mean_multisig {
         }
 
         ctx.accounts.transaction.signers[owner_index] = 2u8;
+
+        let sig_count_approve = ctx
+            .accounts
+            .transaction
+            .signers
+            .iter()
+            .filter(|&did_sign| *did_sign == 1)
+            .count() as u64;
+
+        let sig_count_reject = ctx
+            .accounts
+            .transaction
+            .signers
+            .iter()
+            .filter(|&did_sign| *did_sign == 2)
+            .count() as u64;
+
+        let threshold = ctx.accounts.multisig.threshold;
+        if sig_count_approve < threshold {
+            ctx.accounts.transaction.last_known_proposal_status = ProposalStatus::Active as u8;
+            ctx.accounts.transaction.last_passed_timestamp = 0;
+        }
+        
+        let length_of_owners: u64 = ctx.accounts.multisig.owners.iter().filter(|o| o.address.ne(&Pubkey::default())).count().try_into().unwrap();
+
+        // the number of owners that haven't cast their votes will never reach the threshold so the proposal is failed
+        if threshold > length_of_owners.checked_sub(sig_count_reject).ok_or(ErrorCode::Overflow)? {
+            ctx.accounts.transaction.last_known_proposal_status = ProposalStatus::Failed as u8;
+        }
 
         Ok(())
     }
@@ -290,6 +344,22 @@ pub mod mean_multisig {
 
         if sig_count < ctx.accounts.multisig.threshold {
             return Err(ErrorCode::NotEnoughSigners.into());
+        }
+
+        // has cool off period passed?
+        if ctx.accounts.multisig.cool_off_period_in_seconds > 0{
+            // there is a cool off period specified (cool_off_period > 0)
+            // transaction has enough signatures (sig_count >= ctx.accounts.multisig.threshold)
+            // in this case last_passed_timestamp will be always > 0
+            if ctx.accounts.transaction.last_passed_timestamp == 0 {
+                return Err(ErrorCode::CoolOffPeriodNotReached.into());
+            }
+           
+            let time_passed = now.checked_sub(ctx.accounts.transaction.last_passed_timestamp).ok_or(ErrorCode::Overflow)?;
+            
+            if  time_passed <  ctx.accounts.multisig.cool_off_period_in_seconds {
+                return Err(ErrorCode::CoolOffPeriodNotReached.into());
+            }
         }
 
         let seeds = &[
@@ -327,6 +397,8 @@ pub mod mean_multisig {
                 .ok_or(ErrorCode::Overflow)?;
         }
 
+        ctx.accounts.transaction.last_known_proposal_status = ProposalStatus::Executed as u8;
+
         Ok(())
     }
 
@@ -353,7 +425,7 @@ pub struct CreateMultisig<'info> {
     #[account(
         init,
         payer = proposer, 
-        space = 8 + 640 + 1 + 1 + 32 + 4 + 8 + 8 + 8, // 710
+        space = 8 + 640 + 1 + 1 + 32 + 4 + 8 + 8 + 8 + 8, // 718
     )]
     multisig: Box<Account<'info, MultisigV2>>,
     #[account(
@@ -586,6 +658,8 @@ pub struct MultisigV2 {
     pub pending_txs: u64,  
     /// created time in seconds
     pub created_on: u64,
+    /// cool off period in seconds
+    pub cool_off_period_in_seconds: u64,
 }
 
 #[account]
@@ -609,6 +683,12 @@ pub struct Transaction {
     pub keypairs: Vec<[u8; 64]>,
     /// The proposer of the transaction
     pub proposer: Pubkey,
+    /// Last known proposal status
+    /// The status won't be updated after the cool-off period is meet 
+    /// or after the expiration date arrives.
+    pub last_known_proposal_status: u8,
+    /// Last passed timestamp is used to check if the cool off period has passed before execution
+    pub last_passed_timestamp: u64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -770,4 +850,17 @@ pub enum ErrorCode {
     InvalidMultisig,
     #[msg("Number of additonal accounts passed is less than required.")]
     RequiredAdditionalAccountsNotSent,
+    #[msg("Cool off period has not reached yet.")]
+    CoolOffPeriodNotReached,
+    #[msg("Expiry date comes before cool off period.")]
+    ExpiryDateTooShort,
+}
+
+#[repr(u8)]
+pub enum ProposalStatus {
+    NotDefined = 0,
+    Active = 1,
+    Passed = 2,
+    Executed = 3,
+    Failed = 4,
 }
