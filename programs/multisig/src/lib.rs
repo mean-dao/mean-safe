@@ -44,11 +44,12 @@ pub mod mean_multisig {
         nonce: u8,
         label: String,
         cool_off_period_in_seconds: u64,
-
     ) -> Result<()> {
-
         assert_unique_owners(&owners)?;
-        require!(threshold > 0 && threshold <= owners.len() as u64, InvalidThreshold);
+        require!(
+            threshold > 0 && threshold <= owners.len() as u64,
+            InvalidThreshold
+        );
         require!(owners.len() > 0 && owners.len() <= 10, InvalidOwnersLen);
 
         let multisig = &mut ctx.accounts.multisig;
@@ -60,7 +61,7 @@ pub mod mean_multisig {
             let owner = owners.get(i).unwrap().clone();
             multisig_owners[i] = OwnerData {
                 address: owner.address,
-                name: string_to_array_32(&owner.name)
+                name: string_to_array_32(&owner.name),
             };
         }
 
@@ -79,18 +80,18 @@ pub mod mean_multisig {
 
         // Fee
         let pay_fee_ix = solana_program::system_instruction::transfer(
-            ctx.accounts.proposer.key, 
+            ctx.accounts.proposer.key,
             ctx.accounts.ops_account.key,
-            ctx.accounts.settings.create_multisig_fee
+            ctx.accounts.settings.create_multisig_fee,
         );
 
         solana_program::program::invoke(
             &pay_fee_ix,
             &[
-                ctx.accounts.proposer.to_account_info(), 
-                ctx.accounts.ops_account.to_account_info(), 
-                ctx.accounts.system_program.to_account_info()
-            ]
+                ctx.accounts.proposer.to_account_info(),
+                ctx.accounts.ops_account.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
         )?;
 
         Ok(())
@@ -101,12 +102,13 @@ pub mod mean_multisig {
         ctx: Context<EditMultisig>,
         owners: Vec<Owner>,
         threshold: u64,
-        label: String
-
+        label: String,
     ) -> Result<()> {
-
         assert_unique_owners(&owners)?;
-        require!(threshold > 0 && threshold <= owners.len() as u64, InvalidThreshold);
+        require!(
+            threshold > 0 && threshold <= owners.len() as u64,
+            InvalidThreshold
+        );
         require!(owners.len() > 0 && owners.len() <= 10, InvalidOwnersLen);
 
         let multisig = &mut ctx.accounts.multisig;
@@ -118,13 +120,14 @@ pub mod mean_multisig {
             let owner = owners.get(i).unwrap();
             multisig_owners[i] = OwnerData {
                 address: owner.address,
-                name: string_to_array_32(&owner.name)
+                name: string_to_array_32(&owner.name),
             };
         }
 
-        multisig.owners = multisig_owners;        
+        multisig.owners = multisig_owners;
         multisig.pending_txs = 0;
-        multisig.owner_set_seqno = multisig.owner_set_seqno
+        multisig.owner_set_seqno = multisig
+            .owner_set_seqno
             .checked_add(1)
             .ok_or(ErrorCode::Overflow)?;
 
@@ -141,7 +144,6 @@ pub mod mean_multisig {
         description: String,
         expiration_date: u64,
     ) -> Result<()> {
-
         let owner_index = ctx
             .accounts
             .multisig
@@ -152,16 +154,20 @@ pub mod mean_multisig {
 
         let now = Clock::get()?.unix_timestamp as u64;
 
-        if expiration_date <= now.checked_add(ctx.accounts.multisig.cool_off_period_in_seconds).ok_or(ErrorCode::Overflow)? {
-            return Err(ErrorCode::ExpiryDateTooShort.into());
+        if expiration_date
+            <= now
+                .checked_add(ctx.accounts.multisig.cool_off_period_in_seconds)
+                .ok_or(ErrorCode::Overflow)?
+        {
+            return Err(ErrorCode::ExpirationDateTooShort.into());
         }
-        
+
         let mut signers = Vec::<u8>::new();
         signers.resize(ctx.accounts.multisig.owners.len(), 0u8);
         signers[owner_index] = 1u8;
 
         let tx = &mut ctx.accounts.transaction;
-        
+
         // Save transaction data
         tx.instructions = instructions;
         tx.signers = signers;
@@ -182,26 +188,27 @@ pub mod mean_multisig {
         tx_detail.description = string_to_array_512(&description);
         tx_detail.expiration_date = expiration_date;
 
-        // Update multisig pending transactions 
-        let multisig = &mut ctx.accounts.multisig; 
-        multisig.pending_txs = multisig.pending_txs
+        // Update multisig pending transactions
+        let multisig = &mut ctx.accounts.multisig;
+        multisig.pending_txs = multisig
+            .pending_txs
             .checked_add(1)
             .ok_or(ErrorCode::Overflow)?;
 
         // Fee
         let pay_fee_ix = solana_program::system_instruction::transfer(
-            ctx.accounts.proposer.key, 
+            ctx.accounts.proposer.key,
             ctx.accounts.ops_account.key,
-            ctx.accounts.settings.create_transaction_fee
+            ctx.accounts.settings.create_transaction_fee,
         );
 
         solana_program::program::invoke(
             &pay_fee_ix,
             &[
-                ctx.accounts.proposer.to_account_info(), 
-                ctx.accounts.ops_account.to_account_info(), 
-                ctx.accounts.system_program.to_account_info()
-            ]
+                ctx.accounts.proposer.to_account_info(),
+                ctx.accounts.ops_account.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
         )?;
 
         Ok(())
@@ -209,11 +216,11 @@ pub mod mean_multisig {
 
     /// Cancel a previously voided Tx
     pub fn cancel_transaction(ctx: Context<CancelTransaction>) -> Result<()> {
-
         let multisig = &mut ctx.accounts.multisig;
         // Update the multisig pending Txs
         if multisig.pending_txs > 0 {
-            multisig.pending_txs = multisig.pending_txs
+            multisig.pending_txs = multisig
+                .pending_txs
                 .checked_sub(1)
                 .ok_or(ErrorCode::Overflow)?;
         }
@@ -223,7 +230,6 @@ pub mod mean_multisig {
 
     /// Approves a transaction on behalf of an owner of the multisig.
     pub fn approve(ctx: Context<Approve>) -> Result<()> {
-
         let owner_index = ctx
             .accounts
             .multisig
@@ -235,8 +241,8 @@ pub mod mean_multisig {
         // Transaction has expired already?
         let now = Clock::get()?.unix_timestamp as u64;
 
-        if ctx.accounts.transaction_detail.expiration_date > 0 && 
-           ctx.accounts.transaction_detail.expiration_date < now 
+        if ctx.accounts.transaction_detail.expiration_date > 0
+            && ctx.accounts.transaction_detail.expiration_date <= now
         {
             return Err(ErrorCode::AlreadyExpired.into());
         }
@@ -253,7 +259,7 @@ pub mod mean_multisig {
 
         if sig_count >= ctx.accounts.multisig.threshold {
             ctx.accounts.transaction.last_known_proposal_status = ProposalStatus::Passed as u8;
-            
+
             if sig_count == ctx.accounts.multisig.threshold {
                 ctx.accounts.transaction.last_passed_timestamp = now;
             }
@@ -264,7 +270,6 @@ pub mod mean_multisig {
 
     /// Rejects a transaction on behalf of an owner of the multisig.
     pub fn reject(ctx: Context<Reject>) -> Result<()> {
-
         let owner_index = ctx
             .accounts
             .multisig
@@ -276,8 +281,8 @@ pub mod mean_multisig {
         // Transaction has expired already?
         let now = Clock::get()?.unix_timestamp as u64;
 
-        if ctx.accounts.transaction_detail.expiration_date > 0 && 
-           ctx.accounts.transaction_detail.expiration_date < now 
+        if ctx.accounts.transaction_detail.expiration_date > 0
+            && ctx.accounts.transaction_detail.expiration_date <= now
         {
             return Err(ErrorCode::AlreadyExpired.into());
         }
@@ -305,11 +310,23 @@ pub mod mean_multisig {
             ctx.accounts.transaction.last_known_proposal_status = ProposalStatus::Active as u8;
             ctx.accounts.transaction.last_passed_timestamp = 0;
         }
-        
-        let length_of_owners: u64 = ctx.accounts.multisig.owners.iter().filter(|o| o.address.ne(&Pubkey::default())).count().try_into().unwrap();
+
+        let length_of_owners: u64 = ctx
+            .accounts
+            .multisig
+            .owners
+            .iter()
+            .filter(|o| o.address.ne(&Pubkey::default()))
+            .count()
+            .try_into()
+            .unwrap();
 
         // the number of owners that haven't cast their votes will never reach the threshold so the proposal is failed
-        if threshold > length_of_owners.checked_sub(sig_count_reject).ok_or(ErrorCode::Overflow)? {
+        if threshold
+            > length_of_owners
+                .checked_sub(sig_count_reject)
+                .ok_or(ErrorCode::Overflow)?
+        {
             ctx.accounts.transaction.last_known_proposal_status = ProposalStatus::Failed as u8;
         }
 
@@ -318,7 +335,6 @@ pub mod mean_multisig {
 
     /// Executes the given transaction if threshold owners have signed it.
     pub fn execute_transaction(ctx: Context<ExecuteTransaction>) -> Result<()> {
-
         // Has this been executed already?
         if ctx.accounts.transaction.executed_on > 0 {
             return Err(ErrorCode::AlreadyExecuted.into());
@@ -327,8 +343,8 @@ pub mod mean_multisig {
         // Transaction has expired already?
         let now = Clock::get()?.unix_timestamp as u64;
 
-        if ctx.accounts.transaction_detail.expiration_date > 0 && 
-           ctx.accounts.transaction_detail.expiration_date < now 
+        if ctx.accounts.transaction_detail.expiration_date > 0
+            && ctx.accounts.transaction_detail.expiration_date <= now
         {
             return Err(ErrorCode::AlreadyExpired.into());
         }
@@ -347,17 +363,16 @@ pub mod mean_multisig {
         }
 
         // has cool off period passed?
-        if ctx.accounts.multisig.cool_off_period_in_seconds > 0{
+        if ctx.accounts.multisig.cool_off_period_in_seconds > 0 {
             // there is a cool off period specified (cool_off_period > 0)
             // transaction has enough signatures (sig_count >= ctx.accounts.multisig.threshold)
             // in this case last_passed_timestamp will be always > 0
-            if ctx.accounts.transaction.last_passed_timestamp == 0 {
-                return Err(ErrorCode::CoolOffPeriodNotReached.into());
-            }
-           
-            let time_passed = now.checked_sub(ctx.accounts.transaction.last_passed_timestamp).ok_or(ErrorCode::Overflow)?;
-            
-            if  time_passed <  ctx.accounts.multisig.cool_off_period_in_seconds {
+
+            let time_passed = now
+                .checked_sub(ctx.accounts.transaction.last_passed_timestamp)
+                .ok_or(ErrorCode::Overflow)?;
+
+            if time_passed < ctx.accounts.multisig.cool_off_period_in_seconds {
                 return Err(ErrorCode::CoolOffPeriodNotReached.into());
             }
         }
@@ -374,16 +389,16 @@ pub mod mean_multisig {
         for ixt in &ctx.accounts.transaction.instructions {
             let mut ix: Instruction = ixt.into();
             ix.accounts = ix
-            .accounts
-            .iter()
-            .map(|acc| {
-                let mut acc = acc.clone();
-                if &acc.pubkey == ctx.accounts.multisig_signer.to_account_info().key {
-                    acc.is_signer = true;
-                }
-                acc
-            })
-            .collect();
+                .accounts
+                .iter()
+                .map(|acc| {
+                    let mut acc = acc.clone();
+                    if &acc.pubkey == ctx.accounts.multisig_signer.to_account_info().key {
+                        acc.is_signer = true;
+                    }
+                    acc
+                })
+                .collect();
             solana_program::program::invoke_signed(&ix, accounts, signer)?;
         }
 
@@ -392,7 +407,10 @@ pub mod mean_multisig {
         ctx.accounts.transaction.executed_on = Clock::get()?.unix_timestamp as u64;
 
         if ctx.accounts.multisig.pending_txs > 0 {
-            ctx.accounts.multisig.pending_txs = ctx.accounts.multisig.pending_txs
+            ctx.accounts.multisig.pending_txs = ctx
+                .accounts
+                .multisig
+                .pending_txs
                 .checked_sub(1)
                 .ok_or(ErrorCode::Overflow)?;
         }
@@ -403,13 +421,11 @@ pub mod mean_multisig {
     }
 
     pub fn update_settings(
-        ctx: Context<UpdateSettings>, 
-        ops_account: Pubkey, 
+        ctx: Context<UpdateSettings>,
+        ops_account: Pubkey,
         create_multisig_fee: u64,
         create_transaction_fee: u64,
-
     ) -> Result<()> {
-
         ctx.accounts.settings.ops_account = ops_account;
         ctx.accounts.settings.create_multisig_fee = create_multisig_fee;
         ctx.accounts.settings.create_transaction_fee = create_transaction_fee;
@@ -424,12 +440,12 @@ pub struct CreateMultisig<'info> {
     proposer: Signer<'info>,
     #[account(
         init,
-        payer = proposer, 
+        payer = proposer,
         space = 8 + 640 + 1 + 1 + 32 + 4 + 8 + 8 + 8 + 8, // 718
     )]
     multisig: Box<Account<'info, MultisigV2>>,
     #[account(
-        mut, 
+        mut,
         address = settings.ops_account
     )]
     ops_account: SystemAccount<'info>,
@@ -438,7 +454,7 @@ pub struct CreateMultisig<'info> {
         bump = settings.bump
     )]
     settings: Box<Account<'info, Settings>>,
-    system_program: Program<'info, System>
+    system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -470,7 +486,7 @@ pub struct CreateTransaction<'info> {
     #[account(mut)]
     proposer: Signer<'info>,
     #[account(
-        mut, 
+        mut,
         address = settings.ops_account
     )]
     ops_account: SystemAccount<'info>,
@@ -479,7 +495,7 @@ pub struct CreateTransaction<'info> {
         bump = settings.bump
     )]
     settings: Box<Account<'info, Settings>>,
-    system_program: Program<'info, System>
+    system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -506,18 +522,18 @@ pub struct CancelTransaction<'info> {
         constraint = proposer.key() == transaction.proposer @ ErrorCode::InvalidOwner
     )]
     proposer: Signer<'info>,
-    system_program: Program<'info, System>
+    system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct Approve<'info> {
     #[account(
-        mut, 
+        mut,
         constraint = multisig.owner_set_seqno == transaction.owner_set_seqno @ ErrorCode::InvalidOwnerSetSeqNumber
     )]
     multisig: Box<Account<'info, MultisigV2>>,
     #[account(
-        mut, 
+        mut,
         has_one = multisig,
         constraint = transaction.executed_on == 0 @ ErrorCode::AlreadyExecuted
     )]
@@ -533,18 +549,18 @@ pub struct Approve<'info> {
     // One of the multisig owners. Checked in the handler.
     #[account(mut)]
     owner: Signer<'info>,
-    system_program: Program<'info, System>
+    system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct Reject<'info> {
     #[account(
-        mut, 
+        mut,
         constraint = multisig.owner_set_seqno == transaction.owner_set_seqno @ ErrorCode::InvalidOwnerSetSeqNumber
     )]
     multisig: Box<Account<'info, MultisigV2>>,
     #[account(
-        mut, 
+        mut,
         has_one = multisig,
         constraint = transaction.executed_on == 0 @ ErrorCode::AlreadyExecuted
     )]
@@ -560,7 +576,7 @@ pub struct Reject<'info> {
     // One of the multisig owners. Checked in the handler.
     #[account(mut)]
     owner: Signer<'info>,
-    system_program: Program<'info, System>
+    system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -589,7 +605,7 @@ pub struct ExecuteTransaction<'info> {
     // One of the multisig owners. Checked in the handler.
     #[account(mut)]
     payer: Signer<'info>,
-    system_program: Program<'info, System>
+    system_program: Program<'info, System>,
 }
 
 // #[derive(Accounts)]
@@ -655,7 +671,7 @@ pub struct MultisigV2 {
     /// multisig required signers threshold
     pub threshold: u64,
     /// amount of transaction pending for approval in the multisig
-    pub pending_txs: u64,  
+    pub pending_txs: u64,
     /// created time in seconds
     pub created_on: u64,
     /// cool off period in seconds
@@ -672,7 +688,7 @@ pub struct Transaction {
     pub signers: Vec<u8>,
     /// Owner set sequence number.
     pub owner_set_seqno: u32,
-    /// Created blocktime 
+    /// Created blocktime
     pub created_on: u64,
     /// Executed blocktime
     pub executed_on: u64,
@@ -684,7 +700,7 @@ pub struct Transaction {
     /// The proposer of the transaction
     pub proposer: Pubkey,
     /// Last known proposal status
-    /// The status won't be updated after the cool-off period is meet 
+    /// The status won't be updated after the cool-off period is meet
     /// or after the expiration date arrives.
     pub last_known_proposal_status: u8,
     /// Last passed timestamp is used to check if the cool off period has passed before execution
@@ -708,7 +724,7 @@ pub struct TransactionDetail {
     /// A long description with more details about the transaction
     pub description: [u8; 512],
     /// Expiration date (timestamp)
-    pub expiration_date: u64
+    pub expiration_date: u64,
 }
 
 #[account]
@@ -731,14 +747,14 @@ pub struct Settings {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct Owner {
     pub address: Pubkey,
-    pub name: String
+    pub name: String,
 }
 
 /// The owner data saved in the multisig account data
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
 pub struct OwnerData {
     pub address: Pubkey,
-    pub name: [u8; 32]
+    pub name: [u8; 32],
 }
 
 /// To support fixed size arrays we need to implement
@@ -747,7 +763,7 @@ impl Default for OwnerData {
     fn default() -> Self {
         Self {
             address: Pubkey::default(),
-            name: [0u8; 32]
+            name: [0u8; 32],
         }
     }
 }
@@ -791,7 +807,10 @@ impl From<&AccountMeta> for TransactionAccount {
 fn assert_unique_owners(owners: &[Owner]) -> Result<()> {
     for (i, owner) in owners.iter().enumerate() {
         require!(
-            !owners.iter().skip(i + 1).any(|item| item.address.eq(&owner.address)),
+            !owners
+                .iter()
+                .skip(i + 1)
+                .any(|item| item.address.eq(&owner.address)),
             UniqueOwners
         )
     }
@@ -800,19 +819,19 @@ fn assert_unique_owners(owners: &[Owner]) -> Result<()> {
 
 fn string_to_array_32<'info>(string: &String) -> [u8; 32] {
     let mut string_data = [0u8; 32];
-    string_data[..string.len()].copy_from_slice(&string.as_bytes());    
+    string_data[..string.len()].copy_from_slice(&string.as_bytes());
     string_data
 }
 
 fn string_to_array_64<'info>(string: &String) -> [u8; 64] {
     let mut string_data = [0u8; 64];
-    string_data[..string.len()].copy_from_slice(&string.as_bytes());    
+    string_data[..string.len()].copy_from_slice(&string.as_bytes());
     string_data
 }
 
 fn string_to_array_512<'info>(string: &String) -> [u8; 512] {
     let mut string_data = [0u8; 512];
-    string_data[..string.len()].copy_from_slice(&string.as_bytes());    
+    string_data[..string.len()].copy_from_slice(&string.as_bytes());
     string_data
 }
 
@@ -853,7 +872,7 @@ pub enum ErrorCode {
     #[msg("Cool off period has not reached yet.")]
     CoolOffPeriodNotReached,
     #[msg("Expiry date comes before cool off period.")]
-    ExpiryDateTooShort,
+    ExpirationDateTooShort,
 }
 
 #[repr(u8)]
