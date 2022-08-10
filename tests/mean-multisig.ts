@@ -162,6 +162,8 @@ describe('mean-multisig', () => {
         transaction: transaction.publicKey,
         transactionDetail,
         owner: user1.publicKey,
+        opsAccount: MEAN_MULTISIG_OPS,
+        settings,
         systemProgram: SystemProgram.programId
       })
       .signers([user1])
@@ -180,6 +182,8 @@ describe('mean-multisig', () => {
         transaction: transaction.publicKey,
         transactionDetail,
         owner: user3.publicKey,
+        opsAccount: MEAN_MULTISIG_OPS,
+        settings,
         systemProgram: SystemProgram.programId
       })
       .signers([user3])
@@ -221,6 +225,8 @@ describe('mean-multisig', () => {
         transaction: transaction.publicKey,
         transactionDetail,
         payer: user1.publicKey,
+        opsAccount: MEAN_MULTISIG_OPS,
+        settings,
         systemProgram: SystemProgram.programId
       })
       .signers([user1, user2])
@@ -333,6 +339,8 @@ describe('mean-multisig', () => {
         multisig: multisig,
         transaction: transaction.publicKey,
         transactionDetail,
+        opsAccount: MEAN_MULTISIG_OPS,
+        settings,
         owner: user2.publicKey,
         systemProgram: SystemProgram.programId
       })
@@ -352,6 +360,8 @@ describe('mean-multisig', () => {
         transaction: transaction.publicKey,
         transactionDetail,
         owner: user3.publicKey,
+        opsAccount: MEAN_MULTISIG_OPS,
+        settings,
         systemProgram: SystemProgram.programId
       })
       .signers([user3])
@@ -393,6 +403,8 @@ describe('mean-multisig', () => {
           transaction: transaction.publicKey,
           transactionDetail,
           payer: user1.publicKey,
+          opsAccount: MEAN_MULTISIG_OPS,
+          settings,
           systemProgram: SystemProgram.programId
         })
         .signers([user1, user2])
@@ -500,6 +512,8 @@ describe('mean-multisig', () => {
         transaction: transaction.publicKey,
         transactionDetail,
         owner: user2.publicKey,
+        opsAccount: MEAN_MULTISIG_OPS,
+        settings,
         systemProgram: SystemProgram.programId
       })
       .signers([user2])
@@ -539,6 +553,8 @@ describe('mean-multisig', () => {
           transaction: transaction.publicKey,
           transactionDetail,
           payer: user1.publicKey,
+          opsAccount: MEAN_MULTISIG_OPS,
+          settings,
           systemProgram: SystemProgram.programId
         })
         .signers([user1, user2])
