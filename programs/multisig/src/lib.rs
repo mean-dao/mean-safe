@@ -79,21 +79,12 @@ pub mod mean_multisig {
         multisig.cool_off_period_in_seconds = cool_off_period_in_seconds;
 
         // Fee
-        let pay_fee_ix = solana_program::system_instruction::transfer(
-            ctx.accounts.proposer.key,
-            ctx.accounts.ops_account.key,
-            ctx.accounts.settings.create_multisig_fee,
-        );
-
-        solana_program::program::invoke(
-            &pay_fee_ix,
-            &[
-                ctx.accounts.proposer.to_account_info(),
-                ctx.accounts.ops_account.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
+        pay_fees(
+            ctx.accounts.proposer.to_account_info(),
+            ctx.accounts.ops_account.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            ctx.accounts.settings.create_multisig_fee
         )?;
-
         Ok(())
     }
 
@@ -103,6 +94,7 @@ pub mod mean_multisig {
         owners: Vec<Owner>,
         threshold: u64,
         label: String,
+        cool_off_period_in_seconds: u64,
     ) -> Result<()> {
         assert_unique_owners(&owners)?;
         require!(
@@ -123,7 +115,7 @@ pub mod mean_multisig {
                 name: string_to_array_32(&owner.name),
             };
         }
-
+        multisig.cool_off_period_in_seconds = cool_off_period_in_seconds;
         multisig.owners = multisig_owners;
         multisig.pending_txs = 0;
         multisig.owner_set_seqno = multisig
@@ -131,6 +123,13 @@ pub mod mean_multisig {
             .checked_add(1)
             .ok_or(ErrorCode::Overflow)?;
 
+        // Fee
+        pay_fees(
+            ctx.accounts.multisig_signer.to_account_info(),
+            ctx.accounts.ops_account.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            ctx.accounts.settings.edit_multisig_fee
+        )?;
         Ok(())
     }
 
@@ -196,19 +195,11 @@ pub mod mean_multisig {
             .ok_or(ErrorCode::Overflow)?;
 
         // Fee
-        let pay_fee_ix = solana_program::system_instruction::transfer(
-            ctx.accounts.proposer.key,
-            ctx.accounts.ops_account.key,
-            ctx.accounts.settings.create_transaction_fee,
-        );
-
-        solana_program::program::invoke(
-            &pay_fee_ix,
-            &[
-                ctx.accounts.proposer.to_account_info(),
-                ctx.accounts.ops_account.to_account_info(),
-                ctx.accounts.system_program.to_account_info(),
-            ],
+        pay_fees(
+            ctx.accounts.proposer.to_account_info(),
+            ctx.accounts.ops_account.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            ctx.accounts.settings.create_transaction_fee
         )?;
 
         Ok(())
@@ -224,7 +215,13 @@ pub mod mean_multisig {
                 .checked_sub(1)
                 .ok_or(ErrorCode::Overflow)?;
         }
-
+        // Fee
+        pay_fees(
+            ctx.accounts.proposer.to_account_info(),
+            ctx.accounts.ops_account.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            ctx.accounts.settings.cancel_transaction_fee
+        )?;
         Ok(())
     }
 
@@ -264,6 +261,14 @@ pub mod mean_multisig {
                 ctx.accounts.transaction.last_passed_timestamp = now;
             }
         }
+
+        // Fee
+        pay_fees(
+            ctx.accounts.owner.to_account_info(),
+            ctx.accounts.ops_account.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            ctx.accounts.settings.approve_transaction_fee
+        )?;
 
         Ok(())
     }
@@ -329,6 +334,14 @@ pub mod mean_multisig {
         {
             ctx.accounts.transaction.last_known_proposal_status = ProposalStatus::Failed as u8;
         }
+
+        // Fee
+        pay_fees(
+            ctx.accounts.owner.to_account_info(),
+            ctx.accounts.ops_account.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            ctx.accounts.settings.reject_transaction_fee
+        )?;
 
         Ok(())
     }
@@ -417,6 +430,13 @@ pub mod mean_multisig {
 
         ctx.accounts.transaction.last_known_proposal_status = ProposalStatus::Executed as u8;
 
+        // Fee
+        pay_fees(
+            ctx.accounts.multisig_signer.to_account_info(),
+            ctx.accounts.ops_account.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            ctx.accounts.settings.execute_transaction_fee
+        )?;
         Ok(())
     }
 
@@ -425,10 +445,20 @@ pub mod mean_multisig {
         ops_account: Pubkey,
         create_multisig_fee: u64,
         create_transaction_fee: u64,
+        edit_multisig_fee: u64,
+        approve_transaction_fee: u64,
+        reject_transaction_fee: u64,
+        execute_transaction_fee: u64,
+        cancel_transaction_fee: u64,
     ) -> Result<()> {
         ctx.accounts.settings.ops_account = ops_account;
         ctx.accounts.settings.create_multisig_fee = create_multisig_fee;
         ctx.accounts.settings.create_transaction_fee = create_transaction_fee;
+        ctx.accounts.settings.edit_multisig_fee = edit_multisig_fee;
+        ctx.accounts.settings.approve_transaction_fee = approve_transaction_fee;
+        ctx.accounts.settings.reject_transaction_fee = reject_transaction_fee;
+        ctx.accounts.settings.execute_transaction_fee = execute_transaction_fee;
+        ctx.accounts.settings.cancel_transaction_fee = cancel_transaction_fee;
 
         Ok(())
     }
@@ -466,6 +496,17 @@ pub struct EditMultisig<'info> {
         bump = multisig.nonce,
     )]
     multisig_signer: Signer<'info>,
+    #[account(
+        mut,
+        address = settings.ops_account
+    )]
+    ops_account: SystemAccount<'info>,
+    #[account(
+        seeds = [b"settings"],
+        bump = settings.bump
+    )]
+    settings: Box<Account<'info, Settings>>,
+    system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -522,6 +563,16 @@ pub struct CancelTransaction<'info> {
         constraint = proposer.key() == transaction.proposer @ ErrorCode::InvalidOwner
     )]
     proposer: Signer<'info>,
+    #[account(
+        mut,
+        address = settings.ops_account
+    )]
+    ops_account: SystemAccount<'info>,
+    #[account(
+        seeds = [b"settings"],
+        bump = settings.bump
+    )]
+    settings: Box<Account<'info, Settings>>,
     system_program: Program<'info, System>,
 }
 
@@ -549,6 +600,16 @@ pub struct Approve<'info> {
     // One of the multisig owners. Checked in the handler.
     #[account(mut)]
     owner: Signer<'info>,
+    #[account(
+        mut,
+        address = settings.ops_account
+    )]
+    ops_account: SystemAccount<'info>,
+    #[account(
+        seeds = [b"settings"],
+        bump = settings.bump
+    )]
+    settings: Box<Account<'info, Settings>>,
     system_program: Program<'info, System>,
 }
 
@@ -576,6 +637,16 @@ pub struct Reject<'info> {
     // One of the multisig owners. Checked in the handler.
     #[account(mut)]
     owner: Signer<'info>,
+    #[account(
+        mut,
+        address = settings.ops_account
+    )]
+    ops_account: SystemAccount<'info>,
+    #[account(
+        seeds = [b"settings"],
+        bump = settings.bump
+    )]
+    settings: Box<Account<'info, Settings>>,
     system_program: Program<'info, System>,
 }
 
@@ -605,6 +676,16 @@ pub struct ExecuteTransaction<'info> {
     // One of the multisig owners. Checked in the handler.
     #[account(mut)]
     payer: Signer<'info>,
+    #[account(
+        mut,
+        address = settings.ops_account
+    )]
+    ops_account: SystemAccount<'info>,
+    #[account(
+        seeds = [b"settings"],
+        bump = settings.bump
+    )]
+    settings: Box<Account<'info, Settings>>,
     system_program: Program<'info, System>,
 }
 
@@ -737,10 +818,20 @@ pub struct Settings {
     pub authority: Pubkey,
     /// Fees account
     pub ops_account: Pubkey,
-    /// Fee amount in lamports
+    /// Fee amount in lamports for creating multisig
     pub create_multisig_fee: u64,
-    /// Fee amount in lamports
+    /// Fee amount in lamports for creating transaction
     pub create_transaction_fee: u64,
+    /// Fee amount in lamports for editing a multisig
+    pub edit_multisig_fee: u64,
+    /// Fee amount in lamports for approving a transaction
+    pub approve_transaction_fee: u64,
+    /// Fee amount in lamports for rejecting a transaction
+    pub reject_transaction_fee: u64,
+    /// Fee amount in lamports for executing a transaction
+    pub execute_transaction_fee: u64,
+    /// Fee amount in lamports for cancelling a transaction
+    pub cancel_transaction_fee: u64,
 }
 
 /// Owner parameter passed on create and edit multisig
@@ -833,6 +924,34 @@ fn string_to_array_512<'info>(string: &String) -> [u8; 512] {
     let mut string_data = [0u8; 512];
     string_data[..string.len()].copy_from_slice(&string.as_bytes());
     string_data
+}
+
+fn pay_fees<'info>(
+    fee_payer: AccountInfo<'info>, 
+    ops_account: AccountInfo<'info>,
+    system_program: AccountInfo<'info>,
+    fee_amount: u64,
+) -> Result<()> { 
+        if fee_amount == 0 {
+            return Ok(());
+        }
+
+        let pay_fee_ix = solana_program::system_instruction::transfer(
+            &fee_payer.key(),
+            &ops_account.key(),
+            fee_amount,
+        );
+
+        solana_program::program::invoke(
+            &pay_fee_ix,
+            &[
+                fee_payer,
+                ops_account,
+                system_program,
+            ],
+        )?;
+
+        Ok(())
 }
 
 #[error_code]
