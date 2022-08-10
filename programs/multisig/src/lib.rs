@@ -123,13 +123,6 @@ pub mod mean_multisig {
             .checked_add(1)
             .ok_or(ErrorCode::Overflow)?;
 
-        // Fee
-        pay_fees(
-            ctx.accounts.multisig_signer.to_account_info(),
-            ctx.accounts.ops_account.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-            ctx.accounts.settings.edit_multisig_fee
-        )?;
         Ok(())
     }
 
@@ -445,7 +438,6 @@ pub mod mean_multisig {
         ops_account: Pubkey,
         create_multisig_fee: u64,
         create_transaction_fee: u64,
-        edit_multisig_fee: u64,
         approve_transaction_fee: u64,
         reject_transaction_fee: u64,
         execute_transaction_fee: u64,
@@ -454,7 +446,6 @@ pub mod mean_multisig {
         ctx.accounts.settings.ops_account = ops_account;
         ctx.accounts.settings.create_multisig_fee = create_multisig_fee;
         ctx.accounts.settings.create_transaction_fee = create_transaction_fee;
-        ctx.accounts.settings.edit_multisig_fee = edit_multisig_fee;
         ctx.accounts.settings.approve_transaction_fee = approve_transaction_fee;
         ctx.accounts.settings.reject_transaction_fee = reject_transaction_fee;
         ctx.accounts.settings.execute_transaction_fee = execute_transaction_fee;
@@ -496,17 +487,6 @@ pub struct EditMultisig<'info> {
         bump = multisig.nonce,
     )]
     multisig_signer: Signer<'info>,
-    #[account(
-        mut,
-        address = settings.ops_account
-    )]
-    ops_account: SystemAccount<'info>,
-    #[account(
-        seeds = [b"settings"],
-        bump = settings.bump
-    )]
-    settings: Box<Account<'info, Settings>>,
-    system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -822,8 +802,6 @@ pub struct Settings {
     pub create_multisig_fee: u64,
     /// Fee amount in lamports for creating transaction
     pub create_transaction_fee: u64,
-    /// Fee amount in lamports for editing a multisig
-    pub edit_multisig_fee: u64,
     /// Fee amount in lamports for approving a transaction
     pub approve_transaction_fee: u64,
     /// Fee amount in lamports for rejecting a transaction
