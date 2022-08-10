@@ -653,7 +653,6 @@ pub struct ExecuteTransaction<'info> {
         space = 8 + 584 // discriminator + account size
     )]
     transaction_detail: Box<Account<'info, TransactionDetail>>,
-    // One of the multisig owners. Checked in the handler.
     #[account(mut)]
     payer: Signer<'info>,
     #[account(
