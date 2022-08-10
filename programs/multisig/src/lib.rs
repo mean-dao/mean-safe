@@ -425,7 +425,7 @@ pub mod mean_multisig {
 
         // Fee
         pay_fees(
-            ctx.accounts.multisig_signer.to_account_info(),
+            ctx.accounts.payer.to_account_info(),
             ctx.accounts.ops_account.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
             ctx.accounts.settings.execute_transaction_fee
