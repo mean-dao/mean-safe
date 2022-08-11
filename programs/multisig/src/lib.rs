@@ -83,7 +83,7 @@ pub mod mean_multisig {
             ctx.accounts.proposer.to_account_info(),
             ctx.accounts.ops_account.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
-            ctx.accounts.settings.create_multisig_fee
+            ctx.accounts.settings.create_multisig_fee,
         )?;
         Ok(())
     }
@@ -192,7 +192,7 @@ pub mod mean_multisig {
             ctx.accounts.proposer.to_account_info(),
             ctx.accounts.ops_account.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
-            ctx.accounts.settings.create_transaction_fee
+            ctx.accounts.settings.create_transaction_fee,
         )?;
 
         Ok(())
@@ -213,7 +213,7 @@ pub mod mean_multisig {
             ctx.accounts.proposer.to_account_info(),
             ctx.accounts.ops_account.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
-            ctx.accounts.settings.cancel_transaction_fee
+            ctx.accounts.settings.cancel_transaction_fee,
         )?;
         Ok(())
     }
@@ -260,7 +260,7 @@ pub mod mean_multisig {
             ctx.accounts.owner.to_account_info(),
             ctx.accounts.ops_account.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
-            ctx.accounts.settings.approve_transaction_fee
+            ctx.accounts.settings.approve_transaction_fee,
         )?;
 
         Ok(())
@@ -333,7 +333,7 @@ pub mod mean_multisig {
             ctx.accounts.owner.to_account_info(),
             ctx.accounts.ops_account.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
-            ctx.accounts.settings.reject_transaction_fee
+            ctx.accounts.settings.reject_transaction_fee,
         )?;
 
         Ok(())
@@ -391,21 +391,26 @@ pub mod mean_multisig {
         let signer = &[&seeds[..]];
         let accounts = ctx.remaining_accounts;
 
-        // Execute the transaction instructions signed by the multisig.
-        for ixt in &ctx.accounts.transaction.instructions {
-            let mut ix: Instruction = ixt.into();
-            ix.accounts = ix
-                .accounts
-                .iter()
-                .map(|acc| {
-                    let mut acc = acc.clone();
-                    if &acc.pubkey == ctx.accounts.multisig_signer.to_account_info().key {
-                        acc.is_signer = true;
-                    }
-                    acc
-                })
-                .collect();
-            solana_program::program::invoke_signed(&ix, accounts, signer)?;
+        if ctx.accounts.transaction.instructions.len() > 0 {
+            // Execute the transaction instructions signed by the multisig.
+            for ixt in &ctx.accounts.transaction.instructions {
+                let ix: Instruction = ixt.into();
+                invoke_ix(ix, ctx.accounts.multisig_signer.key(), accounts, signer)?;
+            }
+        } else {
+            // To support legacy single instruction transactions already existing in mainnet.
+            let ix = Instruction {
+                program_id: ctx.accounts.transaction.program_id,
+                accounts: ctx
+                    .accounts
+                    .transaction
+                    .accounts
+                    .iter()
+                    .map(Into::into)
+                    .collect(),
+                data: ctx.accounts.transaction.data.clone(),
+            };
+            invoke_ix(ix, ctx.accounts.multisig_signer.key(), accounts, signer)?;
         }
 
         ctx.accounts.multisig.reload()?;
@@ -428,7 +433,7 @@ pub mod mean_multisig {
             ctx.accounts.payer.to_account_info(),
             ctx.accounts.ops_account.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
-            ctx.accounts.settings.execute_transaction_fee
+            ctx.accounts.settings.execute_transaction_fee,
         )?;
         Ok(())
     }
@@ -493,7 +498,14 @@ pub struct EditMultisig<'info> {
 pub struct CreateTransaction<'info> {
     #[account(mut)]
     multisig: Box<Account<'info, MultisigV2>>,
-    #[account(zero, signer)]
+    #[account(
+        zero,
+        signer,
+        constraint = transaction.accounts.len() == 0 &&
+            transaction.data.len() == 0 &&
+            transaction.program_id == Pubkey::default()
+            @ErrorCode::DeptrecatedCreateTransaction,    
+    )]
     transaction: Box<Account<'info, Transaction>>,
     #[account(
         init,
@@ -742,8 +754,15 @@ pub struct MultisigV2 {
 pub struct Transaction {
     /// The multisig account this transaction belongs to.
     pub multisig: Pubkey,
-    /// Instructions of the transaction.
-    pub instructions: Vec<TransactionInstruction>,
+    /// Target program to execute against.
+    // #[deprecated]
+    pub program_id: Pubkey,
+    /// Accounts requried for the transaction.
+    // #[deprecated]
+    pub accounts: Vec<TransactionAccount>,
+    /// Instruction data for the transaction.
+    // #[deprecated]
+    pub data: Vec<u8>,
     /// signers[index] is true if multisig.owners[index] signed the transaction.
     pub signers: Vec<u8>,
     /// Owner set sequence number.
@@ -759,6 +778,14 @@ pub struct Transaction {
     pub keypairs: Vec<[u8; 64]>,
     /// The proposer of the transaction
     pub proposer: Pubkey,
+    /// The timestamp used as part of the seed of the PDA account
+    // #[deprecated]
+    pub pda_timestamp: u64,
+    /// The bump used to derive the PDA account
+    // #[deprecated]
+    pub pda_bump: u8,
+    /// Instructions of the transaction.
+    pub instructions: Vec<TransactionInstruction>,
     /// Last known proposal status
     /// The status won't be updated after the cool-off period is meet
     /// or after the expiration date arrives.
@@ -872,6 +899,27 @@ impl From<&AccountMeta> for TransactionAccount {
     }
 }
 
+fn invoke_ix(
+    mut ix: Instruction,
+    multisig_signer: Pubkey,
+    accounts: &[AccountInfo],
+    signer: &[&[&[u8]]],
+) -> Result<()> {
+    ix.accounts = ix
+        .accounts
+        .iter()
+        .map(|acc| {
+            let mut acc = acc.clone();
+            if acc.pubkey == multisig_signer {
+                acc.is_signer = true;
+            }
+            acc
+        })
+        .collect();
+    solana_program::program::invoke_signed(&ix, accounts, signer)?;
+    Ok(())
+}
+
 fn assert_unique_owners(owners: &[Owner]) -> Result<()> {
     for (i, owner) in owners.iter().enumerate() {
         require!(
@@ -904,31 +952,24 @@ fn string_to_array_512<'info>(string: &String) -> [u8; 512] {
 }
 
 fn pay_fees<'info>(
-    fee_payer: AccountInfo<'info>, 
+    fee_payer: AccountInfo<'info>,
     ops_account: AccountInfo<'info>,
     system_program: AccountInfo<'info>,
     fee_amount: u64,
-) -> Result<()> { 
-        if fee_amount == 0 {
-            return Ok(());
-        }
+) -> Result<()> {
+    if fee_amount == 0 {
+        return Ok(());
+    }
 
-        let pay_fee_ix = solana_program::system_instruction::transfer(
-            &fee_payer.key(),
-            &ops_account.key(),
-            fee_amount,
-        );
+    let pay_fee_ix = solana_program::system_instruction::transfer(
+        &fee_payer.key(),
+        &ops_account.key(),
+        fee_amount,
+    );
 
-        solana_program::program::invoke(
-            &pay_fee_ix,
-            &[
-                fee_payer,
-                ops_account,
-                system_program,
-            ],
-        )?;
+    solana_program::program::invoke(&pay_fee_ix, &[fee_payer, ops_account, system_program])?;
 
-        Ok(())
+    Ok(())
 }
 
 #[error_code]
@@ -967,8 +1008,10 @@ pub enum ErrorCode {
     RequiredAdditionalAccountsNotSent,
     #[msg("Cool off period has not reached yet.")]
     CoolOffPeriodNotReached,
-    #[msg("Expiry date comes before cool off period.")]
+    #[msg("Expiration date comes before cool off period.")]
     ExpirationDateTooShort,
+    #[msg("Depricated params for creating transaction.")]
+    DeptrecatedCreateTransaction,
 }
 
 #[repr(u8)]
