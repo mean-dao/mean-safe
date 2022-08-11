@@ -642,7 +642,7 @@ describe('mean-multisig', () => {
         });
       throw new Error('Transaction should be rejected');
     } catch (error) {
-      expect(error.message).to.include('Expiry date comes before cool off period.');
+      expect(error.message).to.include('Expiration date comes before cool off period.');
     }
   });
 });
