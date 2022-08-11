@@ -1,6 +1,6 @@
 [package]
 name = "mean-multisig"
-version = "1.14.0"
+version = "2.0.0-alpha.1"
 description = "Mean Multisig"
 edition = "2021"
 license = "Apache-2.0"
