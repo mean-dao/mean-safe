@@ -1,4 +1,4 @@
-# Multisig
+# Solar Safe (Solana Multisig)
 
 An example of a multisig to execute arbitrary Solana transactions.
 
@@ -6,17 +6,17 @@ This program can be used to allow a multisig to govern anything a regular
 Pubkey can govern. One can use the multisig as a BPF program upgrade
 authority, a mint authority, etc.
 
-To use, one must first create a `Multisig` account, specifying two important
+To use the Solar Safe, one must first create a `Multisig` account, specifying two critical
 parameters:
 
-1. Owners - the set of addresses that sign transactions for the multisig.
+1. Owners - the addresses that sign transactions for the multisig.
 2. Threshold - the number of signers required to execute a transaction.
 
 Once the `Multisig` account is created, one can create a `Transaction`
-account, specifying the parameters for a normal solana transaction.
+account, specifying the parameters for a normal Solana transaction.
 
 To sign, owners should invoke the `approve` instruction, and finally,
-the `execute_transaction`, once enough (i.e. `threhsold`) of the owners have
+the `execute_transaction`, once enough (i.e., `threshold`) of the owners have
 signed.
 
 ## Note
@@ -36,7 +36,7 @@ anchor verify msigmtwzgXJHj2ext4XJjCDmpbcMuufFb5cHuwg6Xdt`
 
 ## Developing
 
-[Anchor](https://github.com/project-serum/anchor) is used for developoment, and it's
+[Anchor](https://github.com/project-serum/anchor) is used for development, and its
 recommended workflow is used here. To get started, see the [guide](https://project-serum.github.io/anchor/getting-started/introduction.html).
 
 ### Build
@@ -63,4 +63,4 @@ docker, `cd programs/multisig`, and run
 anchor verify <program-id | write-buffer>
 ```
 
-A list of build artifacts can be found under [releases](https://github.com/project-serum/multisig/releases).
+Build artifacts can be found under [releases](https://github.com/project-serum/multisig/releases).
