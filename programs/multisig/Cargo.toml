@@ -1,6 +1,6 @@
 [package]
 name = "mean-multisig"
-version = "1.15.0"
+version = "1.16.0"
 description = "Mean multisig program"
 edition = "2021"
 license = "Apache-2.0"
@@ -17,5 +17,5 @@ default = []
 devnet = []
 
 [dependencies]
-anchor-lang = { version = "0.25.0", features = ["init-if-needed"] }
-solana-program = "1.10.29"
+anchor-lang = { version = "0.26.0", features = ["init-if-needed"] }
+solana-program = "1.13.5"
